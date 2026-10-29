@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>opencode-delegate — delegated OpenCode tasks for Hermes Agent</title>
+  <meta name="description" content="A Hermes Agent plugin that dispatches one delegated task to a running OpenCode server, streams reasoning and tool progress, and writes a durable result.json.">
+  <meta name="theme-color" content="#0b0f0e">
+  <link rel="canonical" href="https://jpolvora.github.io/opencode-delegate/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="opencode-delegate">
+  <meta property="og:description" content="Delegate one task to a running OpenCode server from Hermes Agent. Stream reasoning, keep the artifacts.">
+  <meta property="og:url" content="https://jpolvora.github.io/opencode-delegate/">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0f0e'/%3E%3Cpath d='M18 42V22h9c7 0 11 3.6 11 10s-4 10-11 10h-9Zm6-5h3c3.4 0 5.2-1.7 5.2-5s-1.8-5-5.2-5h-3v10Zm17 5V22h5v20h-5Z' fill='%236ee7b7'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --bg: #0b0f0e;
+      --bg-soft: #101716;
+      --panel: #121c1a;
+      --panel-2: #0e1514;
+      --line: #22312e;
+      --line-bright: #2f4741;
+      --text: #e7f0ed;
+      --muted: #93a8a2;
+      --mint: #6ee7b7;
+      --mint-dim: #2dd4bf;
+      --blue: #7dd3fc;
+      --amber: #fcd34d;
+      --red: #fca5a5;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --radius: 18px;
+      --wrap: 1120px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(900px 500px at 15% -10%, rgba(110, 231, 183, .12), transparent 65%),
+        radial-gradient(700px 450px at 95% 10%, rgba(125, 211, 252, .09), transparent 65%),
+        var(--bg);
+      font-family: var(--sans);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--mint); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre { font-family: var(--mono); }
+    code {
+      font-size: .9em;
+      color: #d9fff1;
+      background: rgba(110, 231, 183, .08);
+      border: 1px solid rgba(110, 231, 183, .16);
+      border-radius: 6px;
+      padding: .12em .38em;
+    }
+    pre {
+      margin: 0;
+      padding: 1.1rem 1.2rem;
+      overflow: auto;
+      color: #d8e8e3;
+      background: #09100f;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font-size: .86rem;
+      line-height: 1.65;
+    }
+    pre code { background: none; border: 0; padding: 0; color: inherit; font-size: inherit; }
+    .wrap { width: min(var(--wrap), calc(100% - 40px)); margin: 0 auto; }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(14px);
+      background: rgba(11, 15, 14, .78);
+      border-bottom: 1px solid rgba(34, 49, 46, .8);
+    }
+    .nav { display: flex; align-items: center; justify-content: space-between; height: 66px; gap: 20px; }
+    .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; letter-spacing: -.02em; }
+    .brand:hover { text-decoration: none; }
+    .mark {
+      width: 30px; height: 30px; display: grid; place-items: center;
+      border-radius: 9px; background: linear-gradient(145deg, rgba(110,231,183,.22), rgba(45,212,191,.06));
+      border: 1px solid rgba(110,231,183,.38); color: var(--mint); font-family: var(--mono); font-size: 15px; font-weight: 700;
+    }
+    .nav-links { display: flex; align-items: center; gap: 22px; color: var(--muted); font-size: .92rem; }
+    .nav-links a { color: var(--muted); }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+    main { padding: 72px 0 40px; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 11px; border-radius: 999px;
+      border: 1px solid rgba(110,231,183,.26);
+      background: rgba(110,231,183,.07);
+      color: var(--mint); font-family: var(--mono); font-size: .76rem; letter-spacing: .04em; text-transform: uppercase;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 4px rgba(110,231,183,.12); }
+
+    .hero { display: grid; grid-template-columns: 1.08fr .92fr; gap: 52px; align-items: center; padding: 34px 0 64px; }
+    h1 { font-size: clamp(2.6rem, 6vw, 4.7rem); line-height: .98; letter-spacing: -.055em; margin: 18px 0 20px; }
+    h1 .grad {
+      background: linear-gradient(100deg, var(--mint) 0%, var(--blue) 55%, #c4b5fd 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .lede { font-size: 1.08rem; color: var(--muted); max-width: 620px; margin: 0 0 28px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 9px;
+      padding: 11px 18px; border-radius: 10px; border: 1px solid var(--line-bright);
+      color: var(--text); background: var(--panel); font-weight: 650; font-size: .93rem;
+      transition: transform .15s ease, border-color .15s ease, background .15s ease;
+    }
+    .btn:hover { text-decoration: none; transform: translateY(-1px); border-color: var(--mint); }
+    .btn.primary { background: var(--mint); color: #06211a; border-color: var(--mint); }
+    .btn.primary:hover { background: #8af0ca; }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-family: var(--mono); font-size: .72rem; }
+    .badge { padding: 5px 9px; border-radius: 7px; border: 1px solid var(--line); background: rgba(18,28,26,.8); }
+
+    .terminal {
+      border: 1px solid var(--line-bright);
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, #101a18, #0a100f);
+      box-shadow: 0 30px 80px rgba(0,0,0,.42), inset 0 1px rgba(255,255,255,.03);
+      overflow: hidden;
+    }
+    .term-bar { display: flex; align-items: center; gap: 7px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.015); }
+    .term-bar i { width: 9px; height: 9px; border-radius: 50%; background: #394b47; display: block; }
+    .term-bar i:nth-child(1) { background: #f87171; }
+    .term-bar i:nth-child(2) { background: #fbbf24; }
+    .term-bar i:nth-child(3) { background: #34d399; }
+    .term-title { margin-left: 8px; color: var(--muted); font-family: var(--mono); font-size: .72rem; }
+    .term-body { padding: 18px 18px 20px; font-family: var(--mono); font-size: .79rem; line-height: 1.75; }
+    .term-body .cmd { color: var(--blue); }
+    .term-body .dim { color: #647a74; }
+    .term-body .think { color: var(--amber); }
+    .term-body .ok { color: var(--mint); }
+    .term-body .out { color: #d8e8e3; }
+    .term-body .line { white-space: pre-wrap; }
+    .cursor { display: inline-block; width: 7px; height: 14px; background: var(--mint); vertical-align: -2px; animation: blink 1.1s steps(2, start) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    section { padding: 58px 0; border-top: 1px solid rgba(34,49,46,.65); }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+    .kicker { color: var(--mint); font-family: var(--mono); font-size: .74rem; letter-spacing: .1em; text-transform: uppercase; margin: 0 0 8px; }
+    h2 { font-size: clamp(1.7rem, 3.2vw, 2.5rem); line-height: 1.07; letter-spacing: -.035em; margin: 0; }
+    .section-head p { color: var(--muted); max-width: 500px; margin: 0; font-size: .96rem; }
+
+    .grid { display: grid; gap: 14px; }
+    .features { grid-template-columns: repeat(3, 1fr); }
+    .card {
+      padding: 22px; border-radius: 14px; border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(18,28,26,.92), rgba(14,21,20,.78));
+      transition: border-color .15s ease, transform .15s ease;
+    }
+    .card:hover { border-color: var(--line-bright); transform: translateY(-2px); }
+    .icon {
+      width: 36px; height: 36px; display: grid; place-items: center; margin-bottom: 14px;
+      border-radius: 10px; border: 1px solid rgba(110,231,183,.22); background: rgba(110,231,183,.07);
+      color: var(--mint); font-family: var(--mono); font-size: .86rem; font-weight: 700;
+    }
+    .card h3 { font-size: 1rem; margin: 0 0 7px; letter-spacing: -.01em; }
+    .card p { margin: 0; color: var(--muted); font-size: .9rem; }
+
+    .steps { grid-template-columns: repeat(5, 1fr); counter-reset: step; }
+    .step { padding: 18px; border-radius: 12px; border: 1px solid var(--line); background: rgba(18,28,26,.7); }
+    .step::before {
+      counter-increment: step; content: "0" counter(step);
+      display: block; color: var(--mint); font-family: var(--mono); font-size: .72rem; margin-bottom: 8px;
+    }
+    .step strong { display: block; font-size: .92rem; margin-bottom: 4px; }
+    .step span { color: var(--muted); font-size: .82rem; }
+
+    .split { display: grid; grid-template-columns: .92fr 1.08fr; gap: 22px; align-items: start; }
+    .panel {
+      border: 1px solid var(--line); border-radius: var(--radius); background: rgba(18,28,26,.72);
+      padding: 24px;
+    }
+    .panel h3 { margin: 0 0 12px; font-size: 1.05rem; }
+    .panel p { color: var(--muted); font-size: .92rem; margin: 0 0 16px; }
+    .stack { display: grid; gap: 12px; }
+    .label { color: var(--muted); font-family: var(--mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 7px; }
+    .tree { color: #cde7df; white-space: pre; }
+    .tree b { color: var(--mint); font-weight: 600; }
+
+    .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .config-grid .panel { padding: 20px; }
+
+    .note {
+      border-left: 3px solid var(--mint); padding: 12px 16px; border-radius: 0 10px 10px 0;
+      background: rgba(110,231,183,.06); color: var(--muted); font-size: .9rem;
+    }
+    .note strong { color: var(--text); }
+
+    footer { border-top: 1px solid var(--line); padding: 34px 0 46px; color: var(--muted); font-size: .86rem; }
+    .footer-row { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; align-items: center; }
+    .footer-links { display: flex; gap: 18px; flex-wrap: wrap; }
+
+    @media (max-width: 940px) {
+      .hero { grid-template-columns: 1fr; gap: 34px; padding-top: 20px; }
+      .features { grid-template-columns: repeat(2, 1fr); }
+      .steps { grid-template-columns: repeat(2, 1fr); }
+      .split, .config-grid { grid-template-columns: 1fr; }
+      .nav-links a:not(.nav-cta) { display: none; }
+    }
+    @media (max-width: 580px) {
+      .wrap { width: min(var(--wrap), calc(100% - 28px)); }
+      main { padding-top: 42px; }
+      .features, .steps { grid-template-columns: 1fr; }
+      .section-head { display: block; }
+      .section-head p { margin-top: 10px; }
+      h1 { font-size: clamp(2.25rem, 13vw, 3.4rem); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .cursor { animation: none; }
+      .card, .btn { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="#top" aria-label="opencode-delegate home">
+        <span class="mark">&gt;_</span>
+        <span>opencode-delegate</span>
+      </a>
+      <nav class="nav-links" aria-label="Main navigation">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#dispatch">Dispatch</a>
+        <a href="https://github.com/jpolvora/opencode-delegate">GitHub</a>
+        <a class="btn primary" href="#install" style="padding:8px 13px;font-size:.84rem;">Get started</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <div class="wrap">
+      <section class="hero" style="border-top:0;padding-bottom:46px;">
+        <div>
+          <span class="eyebrow"><span class="dot"></span> Hermes Agent plugin</span>
+          <h1>Delegate one task.<br><span class="grad">Keep the reasoning.</span></h1>
+          <p class="lede">
+            A Node runner that connects to your already-running OpenCode server through
+            <code>@opencode/client</code>, loads a harness root, executes a single delegated
+            session in the background, and leaves you a durable result artifact.
+          </p>
+          <div class="actions">
+            <a class="btn primary" href="#install">Install the plugin <span aria-hidden="true">→</span></a>
+            <a class="btn" href="https://github.com/jpolvora/opencode-delegate">View source</a>
+          </div>
+          <div class="badges" aria-label="Project facts">
+            <span class="badge">Hermes Agent v0.22+</span>
+            <span class="badge">OpenCode v2 client</span>
+            <span class="badge">Node 20+</span>
+            <span class="badge">MIT</span>
+          </div>
+        </div>
+
+        <div class="terminal" aria-label="Example streamed run">
+          <div class="term-bar"><i></i><i></i><i></i><span class="term-title">hermes · process log</span></div>
+          <div class="term-body">
+            <div class="line"><span class="cmd">$</span> opencode-delegate --root ./repo --instructions .hermes/tasks/review.md</div>
+            <div class="line dim">RUN_DIR=~/.hermes/plugin-data/opencode-delegate/runs/ocd_...</div>
+            <div class="line dim">SESSION_ID=ses_...</div>
+            <div class="line">&nbsp;</div>
+            <div class="line think">--- reasoning ---</div>
+            <div class="line think">Inspecting the auth client and its tests...</div>
+            <div class="line">&nbsp;</div>
+            <div class="line ok">[opencode-delegate] tool called read path=src/auth/client.ts</div>
+            <div class="line ok">[opencode-delegate] tool ok</div>
+            <div class="line">&nbsp;</div>
+            <div class="line">--- output ---</div>
+            <div class="line out">Added retry-with-backoff for 429 and 5xx.</div>
+            <div class="line out">Tests: 14 passed. Files: src/auth/client.ts, test/auth.test.ts</div>
+            <div class="line">&nbsp;</div>
+            <div class="line ok">[opencode-delegate] execution succeeded</div>
+            <div class="line dim">=== RESULT === <span class="cursor"></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="install">
+        <div class="section-head">
+          <div>
+            <p class="kicker">Quick start</p>
+            <h2>Install once. Dispatch from Hermes.</h2>
+          </div>
+          <p>The server stays yours: the runner only discovers it, opens a session, and streams the work back.</p>
+        </div>
+        <div class="split">
+          <div class="panel">
+            <h3>1. Install the plugin</h3>
+            <p>Clone into the Hermes plugins directory, install the one runtime dependency, validate, and enable.</p>
+            <pre><code>cd "${HERMES_HOME:-$HOME/.hermes}/plugins"
+git clone https://github.com/jpolvora/opencode-delegate.git
+cd opencode-delegate
+npm install --omit=dev
+hermes plugins validate .
+hermes plugins enable opencode-delegate</code></pre>
+          </div>
+          <div class="panel">
+            <h3>2. Dispatch a task</h3>
+            <p>Write the brief inside the harness root, then start the runner as a Hermes background process.</p>
+            <pre><code>mkdir -p ./repo/.hermes/tasks
+cat &gt; ./repo/.hermes/tasks/review.md &lt;&lt;'EOF'
+Review the current diff. Report bugs, missing tests,
+and security risks. Do not edit files.
+EOF
+
+# In Hermes:
+terminal(
+  command='"$PLUGIN/bin/opencode-delegate" \
+    --root ./repo \
+    --instructions .hermes/tasks/review.md \
+    --model review --agent plan',
+  workdir="./repo",
+  background=true,
+  notify_on_complete=true
+)</code></pre>
+          </div>
+        </div>
+        <div class="note" style="margin-top:14px;">
+          <strong>Already authenticated.</strong> The runner never installs, starts, or logs in to OpenCode.
+          It discovers the registered local service, or connects to <code>--server &lt;url&gt;</code>.
+        </div>
+      </section>
+
+      <section id="features">
+        <div class="section-head">
+          <div>
+            <p class="kicker">Why this shape</p>
+            <h2>A delegate with an evidence trail.</h2>
+          </div>
+          <p>Built for long tasks that should outlive the chat turn that started them.</p>
+        </div>
+        <div class="grid features">
+          <article class="card">
+            <div class="icon">01</div>
+            <h3>Harness-aware</h3>
+            <p><code>--root</code> is the OpenCode session location. <code>AGENTS&#46;md</code>, <code>opencode.json(c)</code>, <code>.opencode/</code>, and project skills load from it.</p>
+          </article>
+          <article class="card">
+            <div class="icon">02</div>
+            <h3>Background by design</h3>
+            <p>Launched with Hermes <code>terminal(background=true, notify_on_complete=true)</code>. Poll the process log or wait for the completion turn.</p>
+          </article>
+          <article class="card">
+            <div class="icon">03</div>
+            <h3>Live reasoning</h3>
+            <p>Reasoning, text, tool calls, retries, and permission decisions are streamed as they happen — in text or NDJSON.</p>
+          </article>
+          <article class="card">
+            <div class="icon">04</div>
+            <h3>Durable result</h3>
+            <p>Every run leaves <code>result.json</code>, <code>events.jsonl</code>, <code>run.log</code>, and <code>meta.json</code> under a profile-scoped run directory.</p>
+          </article>
+          <article class="card">
+            <div class="icon">05</div>
+            <h3>Resumable sessions</h3>
+            <p>Pass <code>--session ses_...</code> to continue an OpenCode session. The run artifact records the session, model, and usage.</p>
+          </article>
+          <article class="card">
+            <div class="icon">06</div>
+            <h3>Permission-aware</h3>
+            <p>Non-interactive runs reject prompts by default and record them. <code>--auto</code> is explicit and intended for trusted harnesses only.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="how">
+        <div class="section-head">
+          <div>
+            <p class="kicker">Flow</p>
+            <h2>Five moves, one session.</h2>
+          </div>
+          <p>The runner starts event subscription before prompting, so no reasoning is missed.</p>
+        </div>
+        <div class="grid steps">
+          <div class="step"><strong>Validate root</strong><span>Resolve the harness and reject instruction files that escape it.</span></div>
+          <div class="step"><strong>Connect</strong><span>Discover the local service or use an explicit server URL.</span></div>
+          <div class="step"><strong>Create</strong><span>Open or resume a session with the configured model and agent.</span></div>
+          <div class="step"><strong>Stream</strong><span>Subscribe to events, then prompt. Reasoning and tools print live.</span></div>
+          <div class="step"><strong>Persist</strong><span>Fetch final messages, write <code>result.json</code>, exit by outcome.</span></div>
+        </div>
+      </section>
+
+      <section id="dispatch">
+        <div class="section-head">
+          <div>
+            <p class="kicker">Dispatcher contract</p>
+            <h2>What the agent sees.</h2>
+          </div>
+          <p>The skill teaches Hermes the exact background dispatch, log parsing, and result-reading loop.</p>
+        </div>
+        <div class="split">
+          <div class="panel">
+            <h3>Skill</h3>
+            <p>The plugin ships <code>opencode-delegate</code> and registers <code>opencode-delegate:dispatch</code>.</p>
+            <pre><code># Hermes sees it in the local skill list
+opencode-delegate
+
+# Or load the namespaced plugin skill
+skill_view("opencode-delegate:dispatch")</code></pre>
+            <p>It covers model aliases, resume, cancellation, permission rejection, timeout handling, and artifact review.</p>
+          </div>
+          <div class="panel">
+            <h3>Run directory</h3>
+            <p>Everything needed to audit or replay the turn is colocated.</p>
+            <pre class="tree"><b>~/.hermes/plugin-data/opencode-delegate/runs/&lt;run_id&gt;/</b>
+├── meta.json       plan, root, instructions, pid
+├── events.jsonl    app + raw OpenCode events
+├── run.log         human-readable mirror
+└── <b>result.json</b>     ok, outcome, text, tools, usage
+</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="config">
+        <div class="section-head">
+          <div>
+            <p class="kicker">Configuration</p>
+            <h2>OpenCode semantics, one config file.</h2>
+          </div>
+          <p>Defaults live in <code>config.json</code>; per-profile overrides live in plugin data.</p>
+        </div>
+        <div class="config-grid">
+          <div class="panel">
+            <h3>Model and runtime</h3>
+            <pre><code>{
+  "provider": "opencode-go",
+  "model": "deepseek-v4.1-flash",
+  "models": {
+    "fast": "opencode-go/minimax-m3.1-flash",
+    "review": "opencode-go/deepseek-v4-pro"
+  },
+  "agent": "build",
+  "timeout_seconds": 3600,
+  "heartbeat_seconds": 30,
+  "auto_approve": false
+}</code></pre>
+          </div>
+          <div class="panel">
+            <h3>Server and environment</h3>
+            <pre><code># Empty URL = discover the registered service
+OPENCODE_SERVER_URL=
+
+# Optional overrides
+OPENCODE_DELEGATE_MODEL=opencode-go/deepseek-v4.1-flash
+OPENCODE_DELEGATE_AGENT=build
+OPENCODE_DELEGATE_TIMEOUT=3600
+
+# Or pass explicitly
+opencode-delegate --server http://host:4096 ...</code></pre>
+            <p style="margin-top:14px;"><code>--model fast</code> uses the alias; <code>provider/model#variant</code> selects a variant such as <code>#max</code>.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="safety">
+        <div class="section-head">
+          <div>
+            <p class="kicker">Boundaries</p>
+            <h2>Explicit by default.</h2>
+          </div>
+          <p>No hidden server management, no credential scraping, no surprise approvals.</p>
+        </div>
+        <div class="grid features">
+          <article class="card">
+            <div class="icon">↳</div>
+            <h3>No auth handling</h3>
+            <p>The server is already running and authenticated. The runner only reads the service registration for its connection details.</p>
+          </article>
+          <article class="card">
+            <div class="icon">⌁</div>
+            <h3>Root-contained briefs</h3>
+            <p>Instructions are resolved inside <code>--root</code>. Absolute paths and symlink escapes are rejected before the prompt is sent.</p>
+          </article>
+          <article class="card">
+            <div class="icon">!</div>
+            <h3>Prompts are visible</h3>
+            <p>Permission asks are rejected in non-interactive runs and recorded in <code>result.permissions</code>. Use <code>--auto</code> only when the harness is trusted.</p>
+          </article>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <div class="wrap footer-row">
+      <span>opencode-delegate · MIT · built for Hermes Agent</span>
+      <div class="footer-links">
+        <a href="https://github.com/jpolvora/opencode-delegate">GitHub</a>
+        <a href="https://github.com/jpolvora/opencode-delegate#readme">README</a>
+        <a href="https://opencode.ai/v2/docs/build/client/">@opencode/client docs</a>
+        <a href="https://hermes-agent.nousresearch.com/docs/">Hermes docs</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

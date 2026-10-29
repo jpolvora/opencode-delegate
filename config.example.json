@@ -1,0 +1,21 @@
+{
+  "server": {
+    "url": "",
+    "auto_start": false,
+    "headers": {}
+  },
+  "provider": "opencode-go",
+  "model": "deepseek-v4.1-flash",
+  "variant": "",
+  "models": {
+    "fast": "opencode-go/minimax-m3.1-flash",
+    "review": "opencode-go/deepseek-v4-pro"
+  },
+  "agent": "build",
+  "auto_approve": false,
+  "permissions": [],
+  "timeout_seconds": 3600,
+  "heartbeat_seconds": 30,
+  "reasoning": true,
+  "run_dir": ""
+}

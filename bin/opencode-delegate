@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Thin launcher for the opencode-delegate Node runner.
+set -euo pipefail
+
+HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_ROOT="$(cd -- "$HERE/.." && pwd)"
+RUNNER="$PLUGIN_ROOT/app/main.js"
+
+if [[ ! -f "$RUNNER" ]]; then
+  echo "opencode-delegate: runner not found at $RUNNER" >&2
+  exit 2
+fi
+if ! command -v node >/dev/null 2>&1; then
+  echo "opencode-delegate: node is not installed (need Node >= 20)" >&2
+  exit 2
+fi
+if [[ ! -d "$PLUGIN_ROOT/node_modules/@opencode/client" ]]; then
+  echo "opencode-delegate: dependencies missing; run: (cd \"$PLUGIN_ROOT\" && npm install)" >&2
+  exit 2
+fi
+
+exec node "$RUNNER" "$@"

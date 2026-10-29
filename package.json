@@ -1,0 +1,39 @@
+{
+  "name": "hermes-opencode-delegate",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "description": "Hermes Agent runner for delegated OpenCode tasks via @opencode/client",
+  "license": "MIT",
+  "homepage": "https://jpolvora.github.io/opencode-delegate/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jpolvora/opencode-delegate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jpolvora/opencode-delegate/issues"
+  },
+  "keywords": [
+    "hermes",
+    "hermes-agent",
+    "opencode",
+    "opencode-client",
+    "delegation",
+    "agent",
+    "background"
+  ],
+  "main": "main.js",
+  "bin": {
+    "opencode-delegate": "bin/opencode-delegate"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node app/main.js",
+    "check": "node --check app/main.js"
+  },
+  "dependencies": {
+    "@opencode/client": "2.2.1"
+  }
+}

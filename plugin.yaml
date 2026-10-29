@@ -1,0 +1,28 @@
+name: opencode-delegate
+label: OpenCode Delegate
+kind: standalone
+manifest_version: 2
+version: 0.1.1
+description: >
+  Spawn a Node runner that connects to the already-running OpenCode server through
+  @opencode/client, loads a harness root plus an instructions file, executes one delegated
+  session in the background, streams reasoning/text/tool progress, and writes a durable
+  result.json. Ships the opencode-delegate dispatcher skill for Hermes Agent.
+author: Jone Polvora
+license: MIT
+homepage: https://jpolvora.github.io/opencode-delegate/
+requires_hermes: ">=0.22"
+platforms:
+  - linux
+  - macos
+tags:
+  - opencode
+  - opencode-client
+  - delegation
+  - background
+  - harness
+  - reasoning-stream
+  - node
+  - hermes-agent
+provides_tools: []
+provides_hooks: []

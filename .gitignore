@@ -1,0 +1,8 @@
+node_modules/
+.env
+*.log
+runs/
+__pycache__/
+*.pyc
+.pytest_cache/
+.spec-memo/

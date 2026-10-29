@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "opencode-delegate config",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "root": { "type": "string", "description": "Default harness/runtime root (usually passed with --root)." },
+    "instructions": { "type": "string", "description": "Default instructions file inside root (usually passed with --instructions)." },
+    "title": { "type": "string", "description": "Default OpenCode session title." },
+    "server": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "url": { "type": "string", "description": "Explicit OpenCode server URL. Empty discovers the registered local service." },
+        "auto_start": { "type": "boolean", "description": "Start the registered local service when none is running." },
+        "headers": { "type": "object", "description": "Extra HTTP headers for an explicit remote server." }
+      }
+    },
+    "provider": { "type": "string", "description": "Provider id paired with a bare model id." },
+    "model": { "type": "string", "description": "Default model: alias, provider/model, or bare model id." },
+    "variant": { "type": "string", "description": "Optional model variant (reasoning effort)." },
+    "models": {
+      "type": "object",
+      "description": "Named model aliases usable with --model <alias>.",
+      "additionalProperties": { "type": "string" }
+    },
+    "agent": { "type": "string", "description": "OpenCode agent id, for example build or plan." },
+    "auto_approve": { "type": "boolean", "description": "Approve OpenCode permission prompts automatically. Trusted harnesses only." },
+    "permissions": { "type": "array", "description": "Extra session permission rules passed to session.create." },
+    "timeout_seconds": { "type": "number", "minimum": 1 },
+    "heartbeat_seconds": { "type": "number", "minimum": 0 },
+    "reasoning": { "type": "boolean", "description": "Stream reasoning deltas to stdout." },
+    "run_dir": { "type": "string", "description": "Parent directory for run artifacts. Defaults to ~/.hermes/plugin-data/opencode-delegate/runs." }
+  }
+}
