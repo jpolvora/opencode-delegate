@@ -73,6 +73,7 @@ export function normalizeSettings({ args, config, env = process.env }) {
   const modelSpec =
     args.model ??
     env.OPENCODE_DELEGATE_MODEL ??
+    env.SDW_JUDGE_MODEL ??
     config.model ??
     models.default ??
     ""
@@ -80,12 +81,14 @@ export function normalizeSettings({ args, config, env = process.env }) {
   const providerHint =
     args.provider ??
     env.OPENCODE_DELEGATE_PROVIDER ??
+    env.SDW_JUDGE_PROVIDER ??
     config.provider ??
     ""
 
   const variant =
     args.variant ??
     env.OPENCODE_DELEGATE_VARIANT ??
+    env.SDW_JUDGE_EFFORT ??
     config.variant ??
     ""
 
@@ -113,11 +116,34 @@ export function normalizeSettings({ args, config, env = process.env }) {
   const heartbeatSeconds = Math.max(0, number(args.heartbeat, number(config.heartbeat_seconds, 30)))
 
   return {
-    root: String(args.root ?? env.OPENCODE_DELEGATE_ROOT ?? config.root ?? "").trim(),
-    instructions: String(
-      args.instructions ?? env.OPENCODE_DELEGATE_INSTRUCTIONS ?? config.instructions ?? "",
+    root: String(
+      args.root ??
+        env.OPENCODE_DELEGATE_ROOT ??
+        env.SDW_WORKING_DIR ??
+        env.SDW_TARGET_ROOT ??
+        config.root ??
+        "",
     ).trim(),
-    serverUrl: String(args.server ?? env.OPENCODE_SERVER_URL ?? server.url ?? "").trim(),
+    targetRoot: String(args.targetRoot ?? env.SDW_TARGET_ROOT ?? config.target_root ?? "").trim(),
+    instructions: String(
+      args.instructions ??
+        env.OPENCODE_DELEGATE_INSTRUCTIONS ??
+        env.SDW_PROMPT_FILE ??
+        env.SDW_JUDGE_PROMPT ??
+        config.instructions ??
+        "",
+    ).trim(),
+    evidenceFile: String(args.evidence ?? env.SDW_EVIDENCE_FILE ?? "").trim(),
+    verdictFile: String(args.verdict ?? env.SDW_JUDGE_VERDICT ?? "").trim(),
+    diffFile: String(args.diffFile ?? env.SDW_JUDGE_DIFF ?? "").trim(),
+    criteriaFile: String(args.criteriaFile ?? env.SDW_JUDGE_CRITERIA ?? "").trim(),
+    taskId: String(args.taskId ?? env.SDW_TASK_ID ?? "").trim(),
+    specSlug: String(args.slug ?? env.SDW_SPEC_SLUG ?? "").trim(),
+    sdwRunId: String(args.runId ?? env.SDW_RUN_ID ?? "").trim(),
+    acIds: parseCsv(args.acIds ?? env.SDW_AC_IDS ?? ""),
+    serverUrl: String(
+      args.server ?? env.OPENCODE_SERVER_URL ?? env.SDW_JUDGE_API_ENDPOINT ?? server.url ?? "",
+    ).trim(),
     autoStart: Boolean(args.autoStart || server.auto_start),
     headers: isPlainObject(server.headers) ? server.headers : {},
     modelSpec: typeof modelSpec === "string" ? modelSpec.trim() : modelSpec,
@@ -155,4 +181,13 @@ function number(value, fallback) {
   if (value === undefined || value === null || value === "") return fallback
   const n = Number(value)
   return Number.isFinite(n) ? n : fallback
+}
+
+function parseCsv(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean)
+  if (typeof value !== "string" || !value.trim()) return []
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
 }

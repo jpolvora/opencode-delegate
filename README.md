@@ -75,6 +75,15 @@ SESSION_ID=ses_...
 Human mode streams `--- reasoning ---`, `--- output ---`, tool markers, and a final
 `=== RESULT ===` block. JSON mode (`--json` / `--jsonl`) emits one JSON object per line.
 
+### `sdw-run` Integration
+
+`opencode-delegate` speaks the `sdw-run` dispatch and result contracts natively:
+
+- **Step 4 (`subagent` mode):** pass the `sdw-run task next` envelope directly (`--root <workingDir> --prompt-file <promptFile> --evidence <evidenceFile> --task <taskId> --slug <specSlug>`). When `--prompt-file` points to `.sdw/state/<slug>/<runId>/task-<id>.prompt.md`, the sibling `.evidence.json` path and task metadata are inferred automatically.
+- **Step 4 (`command` mode):** set `"implementation": { "mode": "command", "command": "/path/to/opencode-delegate --auto" }` in `.sdw/config.json`. The runner reads `SDW_WORKING_DIR`, `SDW_TARGET_ROOT`, `SDW_PROMPT_FILE`, `SDW_EVIDENCE_FILE`, `SDW_TASK_ID`, `SDW_SPEC_SLUG`, and `SDW_AC_IDS` automatically, and `--target-root` / `SDW_TARGET_ROOT` allows task worktrees under `.sdw/worktrees/` to read prompts and write evidence inside `<targetRoot>/.sdw/state/`.
+- **Step 5 (`scoring.judgeCommand` or exit `5`):** run with `--prompt-file <step-5-judge.prompt.md> --verdict <step-5-judge.verdict.json> --agent plan --model review` (or `SDW_JUDGE_PROMPT` / `SDW_JUDGE_VERDICT`). The runner extracts and validates the `{ score, verdicts, notes }` JSON verdict into `<verdictFile>`.
+- **Result contract (`result.json`):** includes top-level `status` (`success|partial|failed|blocked`), `taskId`, `specSlug`, `acIds`, `filesChanged`, `tests` (`[{name, status, command?}]`), `summary`, `evidence`, and `verdict` alongside `ok`, `outcome`, `text`, `reasoning`, `tools`, `permissions`, and `usage`.
+
 ## Configuration
 
 The runner loads, in order:
@@ -186,6 +195,7 @@ opencode-delegate/
 │       ├── output.js
 │       ├── paths.js
 │       ├── run.js
+│       ├── sdw.js
 │       └── server.js
 └── skills/dispatch/
     ├── SKILL.md

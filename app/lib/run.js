@@ -2,10 +2,25 @@ import crypto from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { OpenCode } from "@opencode/client"
-import { detectHarness, resolveInstructions, resolveRoot } from "./instructions.js"
+import {
+  detectHarness,
+  inferSdwMetadata,
+  resolveArtifactPath,
+  resolveInstructions,
+  resolveRoot,
+  resolveTargetRoot,
+} from "./instructions.js"
 import { resolveModel } from "./model.js"
 import { RunOutput } from "./output.js"
 import { expandHome, pluginDataDir } from "./paths.js"
+import {
+  buildPromptText,
+  captureBaseline,
+  detectFilesChanged,
+  finalizeEvidence,
+  finalizeVerdict,
+  summarizeAssistantText,
+} from "./sdw.js"
 import { resolveServer } from "./server.js"
 
 const EVENT_TYPES = [
@@ -38,8 +53,44 @@ const EVENT_TYPES = [
 
 export async function runTask(settings) {
   const root = await resolveRoot(settings.root)
-  const instructions = await resolveInstructions({ root, value: settings.instructions })
+  const targetRoot = await resolveTargetRoot({ root, value: settings.targetRoot })
+  const instructions = await resolveInstructions({ root, targetRoot, value: settings.instructions })
+  const inferred = inferSdwMetadata(instructions)
+  const sdw = {
+    kind:
+      inferred.kind ||
+      (settings.verdictFile ? "judge" : settings.evidenceFile || settings.taskId ? "task" : null),
+    taskId: settings.taskId || inferred.taskId || null,
+    specSlug: settings.specSlug || inferred.specSlug || null,
+    runId: settings.sdwRunId || inferred.runId || null,
+    acIds: settings.acIds?.length ? settings.acIds : inferred.acIds,
+    evidence: await resolveArtifactPath({
+      root,
+      targetRoot,
+      value: settings.evidenceFile || inferred.evidenceFile,
+      label: "evidence",
+    }),
+    verdict: await resolveArtifactPath({
+      root,
+      targetRoot,
+      value: settings.verdictFile || inferred.verdictFile,
+      label: "verdict",
+    }),
+    diff: await resolveArtifactPath({
+      root,
+      targetRoot,
+      value: settings.diffFile,
+      label: "diff",
+    }),
+    criteria: await resolveArtifactPath({
+      root,
+      targetRoot,
+      value: settings.criteriaFile,
+      label: "criteria",
+    }),
+  }
   const harness = await detectHarness(root.real)
+  const baseline = captureBaseline(root.real)
 
   const runId = makeRunId()
   const parent = settings.runDir
@@ -63,9 +114,15 @@ export async function runTask(settings) {
 
   out.plain(`RUN_DIR=${runDir}`)
   out.plain(`RESULT_FILE=${resultFile}`)
+  if (sdw.evidence) out.plain(`EVIDENCE_FILE=${sdw.evidence.path}`)
+  if (sdw.verdict) out.plain(`VERDICT_FILE=${sdw.verdict.path}`)
   out.log(`run ${runId}`)
   out.log(`root ${root.real}`)
+  if (targetRoot.real !== root.real) out.log(`target_root ${targetRoot.real}`)
   out.log(`instructions ${instructions.relative} (${instructions.bytes} bytes)`)
+  if (sdw.taskId) out.log(`sdw task ${sdw.taskId}${sdw.specSlug ? ` (${sdw.specSlug})` : ""}`)
+  if (sdw.evidence) out.log(`sdw evidence ${sdw.evidence.relative}`)
+  if (sdw.verdict) out.log(`sdw verdict ${sdw.verdict.relative}`)
   out.log(`harness ${harness.files.length ? harness.files.join(", ") : "(none detected)"}`)
   out.record("run.started", {
     run_id: runId,
@@ -74,6 +131,12 @@ export async function runTask(settings) {
     run_dir: runDir,
     result_file: resultFile,
     root: root.real,
+    target_root: targetRoot.real,
+    task_id: sdw.taskId,
+    spec_slug: sdw.specSlug,
+    sdw_run_id: sdw.runId,
+    evidence_file: sdw.evidence?.path || null,
+    verdict_file: sdw.verdict?.path || null,
     instructions: {
       relative: instructions.relative,
       bytes: instructions.bytes,
@@ -91,6 +154,12 @@ export async function runTask(settings) {
     node: process.version,
     argv: process.argv.slice(2),
     root: root.real,
+    target_root: targetRoot.real,
+    task_id: sdw.taskId,
+    spec_slug: sdw.specSlug,
+    sdw_run_id: sdw.runId,
+    evidence_file: sdw.evidence?.path || null,
+    verdict_file: sdw.verdict?.path || null,
     instructions: {
       relative: instructions.relative,
       path: instructions.path,
@@ -163,9 +232,20 @@ export async function runTask(settings) {
         ok: true,
         dry_run: true,
         run_id: runId,
+        status: "success",
+        outcome: "succeeded",
         run_dir: runDir,
         result_file: resultFile,
         root: root.real,
+        target_root: targetRoot.real,
+        taskId: sdw.taskId,
+        specSlug: sdw.specSlug,
+        acIds: sdw.acIds,
+        filesChanged: [],
+        tests: [],
+        summary: "Dry run plan validated.",
+        evidence_file: sdw.evidence?.path || null,
+        verdict_file: sdw.verdict?.path || null,
         instructions: {
           relative: instructions.relative,
           bytes: instructions.bytes,
@@ -289,14 +369,17 @@ export async function runTask(settings) {
     }
 
     state.turnStartedAt = Date.now()
+    const promptText = buildPromptText({ instructions, sdw })
     const promptPromise = state.client.session
       .prompt({
         sessionID: state.session.id,
-        text: instructions.text,
+        text: promptText,
         metadata: {
           source: "hermes-opencode-delegate",
           run_id: runId,
           instructions: instructions.relative,
+          ...(sdw.taskId ? { sdw_task_id: sdw.taskId } : {}),
+          ...(sdw.specSlug ? { sdw_spec_slug: sdw.specSlug } : {}),
         },
       })
       .then(() => {
@@ -493,7 +576,8 @@ export async function runTask(settings) {
   }
 
   const finishedAt = Date.now()
-  const result = buildResult({
+  const detectedFilesChanged = detectFilesChanged(root.real, baseline)
+  const result = await buildResult({
     settings,
     runId,
     runDir,
@@ -501,6 +585,9 @@ export async function runTask(settings) {
     startedAt,
     finishedAt,
     root: root.real,
+    targetRoot: targetRoot.real,
+    sdw,
+    detectedFilesChanged,
     instructions,
     harness,
     server: state.server,
@@ -554,7 +641,7 @@ function modelSummary(model) {
   }
 }
 
-function buildResult({
+async function buildResult({
   settings,
   runId,
   runDir,
@@ -562,6 +649,9 @@ function buildResult({
   startedAt,
   finishedAt,
   root,
+  targetRoot,
+  sdw,
+  detectedFilesChanged,
   instructions,
   harness,
   server,
@@ -612,16 +702,85 @@ function buildResult({
   )
 
   const outcome = session?.outcome || terminal?.outcome || "unknown"
-  const error = terminal?.error || null
-  const ok = outcome === "succeeded" && !error
+  const rawError = terminal?.error ? formatError(terminal.error) : null
+  const sessionOk = outcome === "succeeded" && !rawError
   const lastAssistant = assistant.at(-1)
+
+  const evidenceReport = sdw?.evidence
+    ? await finalizeEvidence({
+        evidence: sdw.evidence,
+        root,
+        targetRoot,
+        sdw,
+        text,
+      })
+    : null
+  const verdictReport = sdw?.verdict
+    ? await finalizeVerdict({
+        verdict: sdw.verdict,
+        text,
+      })
+    : null
+
+  let ok = sessionOk
+  let status = sessionOk ? "success" : outcome === "interrupted" ? "partial" : "failed"
+  let finalError = rawError
+
+  if (evidenceReport) {
+    if (!evidenceReport.exists) {
+      ok = false
+      status = sessionOk ? "failed" : status
+      finalError = finalError || evidenceReport.errors[0] || `Evidence file missing: ${evidenceReport.relative}`
+    } else if (!evidenceReport.valid) {
+      ok = false
+      status = evidenceReport.status || "failed"
+      finalError = finalError || `Evidence validation failed: ${evidenceReport.errors.join("; ")}`
+    } else if (evidenceReport.status !== "success") {
+      ok = false
+      status = evidenceReport.status || "failed"
+      finalError = finalError || `Task reported non-success status: ${evidenceReport.status}`
+    }
+  }
+
+  if (verdictReport) {
+    if (!verdictReport.exists || !verdictReport.valid) {
+      ok = false
+      status = "failed"
+      finalError = finalError || `Judge verdict validation failed: ${verdictReport.errors.join("; ")}`
+    }
+  }
+
+  const evidenceData = evidenceReport?.data || null
+  const verdictData = verdictReport?.data || null
+  const filesChanged = Array.isArray(evidenceData?.filesChanged) && evidenceData.filesChanged.length > 0
+    ? evidenceData.filesChanged
+    : detectedFilesChanged || []
+  const tests = Array.isArray(evidenceData?.tests) ? evidenceData.tests : []
+  const acIds = Array.isArray(evidenceData?.acIds) && evidenceData.acIds.length > 0
+    ? evidenceData.acIds
+    : sdw?.acIds || []
+  const summary =
+    (typeof evidenceData?.summary === "string" && evidenceData.summary.trim()) ||
+    (typeof verdictData?.notes === "string" && verdictData.notes.trim()) ||
+    summarizeAssistantText(text) ||
+    finalError ||
+    ""
 
   return {
     ok,
     dry_run: Boolean(dryRun),
     run_id: runId,
+    status,
     outcome,
-    error: error ? formatError(error) : null,
+    error: finalError,
+    taskId: evidenceData?.taskId || sdw?.taskId || null,
+    specSlug: sdw?.specSlug || null,
+    acIds,
+    filesChanged,
+    tests,
+    summary,
+    evidence: evidenceReport,
+    verdict: verdictReport,
     terminal: terminal
       ? {
           kind: terminal.kind,
@@ -639,6 +798,7 @@ function buildResult({
       duration_ms: finishedAt - startedAt,
     },
     root,
+    target_root: targetRoot || root,
     instructions: {
       relative: instructions.relative,
       path: instructions.path,
@@ -695,6 +855,8 @@ function buildResult({
       events: path.join(runDir, "events.jsonl"),
       log: path.join(runDir, "run.log"),
       meta: path.join(runDir, "meta.json"),
+      ...(evidenceReport ? { evidence: evidenceReport.path } : {}),
+      ...(verdictReport ? { verdict: verdictReport.path } : {}),
     },
     config_file: settings.configFile,
   }

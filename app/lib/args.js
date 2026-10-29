@@ -1,6 +1,24 @@
 const FLAGS = {
   root: { short: "r", value: true },
+  "working-dir": { short: "w", value: true, alias: "root" },
+  workdir: { value: true, alias: "root" },
+  cwd: { value: true, alias: "root" },
+  "target-root": { value: true },
   instructions: { short: "i", value: true },
+  prompt: { short: "p", value: true, alias: "instructions" },
+  "prompt-file": { value: true, alias: "instructions" },
+  evidence: { value: true },
+  "evidence-file": { value: true, alias: "evidence" },
+  verdict: { value: true },
+  "verdict-file": { value: true, alias: "verdict" },
+  "diff-file": { value: true },
+  "criteria-file": { value: true },
+  task: { value: true, alias: "task-id" },
+  "task-id": { value: true },
+  slug: { value: true },
+  spec: { value: true, alias: "slug" },
+  "run-id": { value: true },
+  "ac-ids": { value: true },
   server: { short: "s", value: true },
   config: { short: "c", value: true },
   "env-file": { value: true },
@@ -48,8 +66,8 @@ export function parseArgs(argv) {
   const parsed = { _: [] }
 
   const assign = (name, value) => {
-    const key = camel(name)
     const spec = FLAGS[name]
+    const key = camel(spec.alias || name)
     if (spec.value) {
       parsed[key] = value
     } else {
@@ -134,10 +152,28 @@ USAGE
   opencode-delegate <root> <instructions> [options]
 
 REQUIRED
-  -r, --root <dir>              Harness/runtime root. OpenCode session location; AGENTS.md,
-                                opencode.json(c), .opencode/ etc. are loaded from here.
-  -i, --instructions <file>     Task instructions. Relative paths resolve inside --root;
-                                the resolved file must stay inside the root.
+  -r, --root <dir>              Harness/runtime root (aliases: -w, --working-dir, --workdir, --cwd).
+                                OpenCode session location; AGENTS.md, opencode.json(c), .opencode/
+                                etc. are loaded from here. Falls back to OPENCODE_DELEGATE_ROOT,
+                                SDW_WORKING_DIR, or SDW_TARGET_ROOT.
+  -i, --instructions <file>     Task instructions (aliases: -p, --prompt, --prompt-file).
+                                Relative paths resolve inside --root (or --target-root).
+                                Falls back to OPENCODE_DELEGATE_INSTRUCTIONS, SDW_PROMPT_FILE,
+                                or SDW_JUDGE_PROMPT.
+
+SDW-RUN INTEGRATION
+      --target-root <dir>       Outer repository root when --root is a task worktree
+                                (default: SDW_TARGET_ROOT or inferred from .sdw/worktrees/).
+      --evidence <file>         SDW Step 4 task evidence JSON path (alias: --evidence-file;
+                                default: SDW_EVIDENCE_FILE or inferred from task-<id>.prompt.md).
+      --verdict <file>          SDW Step 5 judge verdict JSON path (alias: --verdict-file;
+                                default: SDW_JUDGE_VERDICT or inferred from step-5-judge.prompt.md).
+      --diff-file <file>        Optional SDW Step 5 diff file (default: SDW_JUDGE_DIFF).
+      --criteria-file <file>    Optional SDW Step 5 criteria file (default: SDW_JUDGE_CRITERIA).
+      --task, --task-id <id>    SDW task identifier (default: SDW_TASK_ID).
+      --slug, --spec <slug>     SDW specification slug (default: SDW_SPEC_SLUG).
+      --run-id <id>             SDW run identifier (default: SDW_RUN_ID).
+      --ac-ids <id,id...>       Comma-separated acceptance criteria IDs (default: SDW_AC_IDS).
 
 CONNECTION
   -s, --server <url>            Explicit OpenCode server URL. Otherwise OPENCODE_SERVER_URL
@@ -172,7 +208,12 @@ ENVIRONMENT
   OPENCODE_SERVER_URL, OPENCODE_DELEGATE_MODEL, OPENCODE_DELEGATE_PROVIDER,
   OPENCODE_DELEGATE_VARIANT, OPENCODE_DELEGATE_AGENT, OPENCODE_DELEGATE_TIMEOUT,
   OPENCODE_DELEGATE_AUTO_APPROVE, OPENCODE_DELEGATE_REASONING,
-  OPENCODE_DELEGATE_RUN_DIR, OPENCODE_DELEGATE_CONFIG, OPENCODE_DELEGATE_ENV.
+  OPENCODE_DELEGATE_RUN_DIR, OPENCODE_DELEGATE_CONFIG, OPENCODE_DELEGATE_ENV,
+  OPENCODE_DELEGATE_ROOT, OPENCODE_DELEGATE_INSTRUCTIONS,
+  SDW_WORKING_DIR, SDW_TARGET_ROOT, SDW_PROMPT_FILE, SDW_EVIDENCE_FILE,
+  SDW_TASK_ID, SDW_SPEC_SLUG, SDW_AC_IDS, SDW_JUDGE_PROMPT, SDW_JUDGE_VERDICT,
+  SDW_JUDGE_DIFF, SDW_JUDGE_CRITERIA, SDW_JUDGE_MODEL, SDW_JUDGE_PROVIDER,
+  SDW_JUDGE_EFFORT, SDW_JUDGE_API_ENDPOINT.
 
 OUTPUT
   Human mode: lifecycle lines, "--- reasoning ---", "--- output ---", "--- tools ---",

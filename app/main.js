@@ -49,9 +49,6 @@ async function main(argv) {
   const { config } = readConfig(configPath)
   const settings = normalizeSettings({ args, config })
   settings.configFile = config.__file || configPath
-  settings.root = args.root || process.env.OPENCODE_DELEGATE_ROOT || config.root || ""
-  settings.instructions =
-    args.instructions || process.env.OPENCODE_DELEGATE_INSTRUCTIONS || config.instructions || ""
 
   if (settings.printConfig) {
     const printable = {
